@@ -1,0 +1,25 @@
+# --- 公司相關：永遠不進 git ---
+plugins/company_*.py
+plugins/private_*.py
+config/company*.yaml
+*.company.*
+screenshots_company/
+
+# --- 本機設定與帳密 ---
+config/local*.yaml
+sim/legacyapp/users.ini
+
+# --- 產出物 ---
+sim_data/
+sim/legacyapp/bin/
+bench/results/*.json
+bench/traces/
+ocr_templates/*.json
+!ocr_templates/.gitkeep
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/

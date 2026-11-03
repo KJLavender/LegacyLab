@@ -1,0 +1,8 @@
+id: write_guard
+description: 沒有明確允許時，會改資料的 Exclude 必須在碰到 GUI 之前被擋下
+actions:
+  - query: {equip_type: ETCH}
+  - exclude: {item: $first}     # 預期丟 WriteBlocked
+evaluate:
+  - write_blocked
+  - no_data_modified

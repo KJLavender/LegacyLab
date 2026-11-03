@@ -1,0 +1,11 @@
+# 端到端任務（參考 WindowsAgentArena：起始狀態、動作、檢查函式）
+id: query_export_analyze
+description: 依機台類型查詢，開第一張圖，匯出 With Batch Lot，分析
+actions:
+  - query: {equip_type: CVD, days: 30, points: 60}
+  - export: {item: $first}
+  - analyze: {item: $first}
+evaluate:
+  # 匯出檔的數值和答案卷完全一致；查詢結果的 ID 和答案卷一致
+  - export_matches_truth
+  - query_ids_match_truth

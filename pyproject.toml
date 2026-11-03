@@ -1,0 +1,30 @@
+[project]
+name = "legacylab"
+version = "0.1.0"
+description = "Simulated legacy Windows system + automation framework + benchmark"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pillow>=10",
+    "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+# E3：OCR 引擎比較
+ocr = ["rapidocr-onnxruntime==1.4.4"]
+# E2：變化點偵測
+changepoint = ["ruptures==1.1.9", "river==0.22.0"]
+# E1：管制圖函式庫
+spc = ["shewhart==0.1.1"]
+# 假入口網站 + SSO
+portal = ["starlette==1.10.0", "uvicorn==0.54.0"]
+# tools/inspect_window.py 的 MSAA 讀取
+inspect = ["comtypes==1.4.11"]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["gui: needs the compiled LegacyApp and a desktop session"]
+
+[tool.setuptools]
+packages = ["core", "core.ocr", "plugins", "analysis", "bench", "sim", "sim.datagen", "sim.portal", "sim.launcher"]

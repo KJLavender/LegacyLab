@@ -1,0 +1,9 @@
+id: paging_lookup_verified
+description: 同 paging_lookup，但 OCR 沒把握的列先開圖用標題（hwnd 精確文字）校正
+actions:
+  - query: {equip_type: ALL}
+  - verify: {}
+  - open: {item: $last}
+evaluate:
+  - query_ids_match_truth
+  - opened_item_title

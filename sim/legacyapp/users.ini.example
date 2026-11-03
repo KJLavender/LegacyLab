@@ -1,0 +1,2 @@
+; 假 SSO / LOGIN 帳密。複製成 users.ini 後自行修改（users.ini 不進 git）。不要放真密碼。
+demo=demo123

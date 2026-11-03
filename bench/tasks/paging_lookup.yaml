@@ -1,0 +1,8 @@
+id: paging_lookup
+description: 查全部（超過一頁），開最後一頁的圖，考驗翻頁與列定位
+actions:
+  - query: {equip_type: ALL}
+  - open: {item: $last}
+evaluate:
+  - query_ids_match_truth
+  - opened_item_title
