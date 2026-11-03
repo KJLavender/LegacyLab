@@ -95,3 +95,8 @@
 ### 其他
 
 - 失敗時，多按鈕對話框本身也會截圖，並記下文字與按鈕。
+
+### 預設對話框規則
+
+- 預設 `{"Reconnect now?": "Yes"}`，按鈕用標準 ID 比對（中文 Windows 的「是(&Y)」也對得到）。
+- heavy 混沌、不帶任何 `--dialog-rule`：`query_export_analyze`、`write_guard`、`paging_lookup_verified` 都是 3/3；`paging_lookup`（不校正）仍是 0/3，原因是 OCR。

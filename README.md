@@ -41,5 +41,5 @@ The fake login is `demo` / `demo123` (`sim/legacyapp/users.ini.example`). Copy i
 ## Safety rules
 
 - Read-only by default. Data-modifying actions (`write_actions`) raise `WriteBlocked` before any GUI interaction unless passed in `allow_write`.
-- Only single-button dialogs are dismissed automatically. Multi-button dialogs fail the run unless the user configures an explicit `dialog_rules` entry; rules may not answer data-modifying confirmations.
+- Single-button dialogs are dismissed automatically. Multi-button dialogs are answered only by `dialog_rules` (text fragment → standard button name such as `Yes` / `No`, matched by control ID so it works in any Windows language); anything else fails the run. The default is `{"Reconnect now?": "Yes"}`; pass `dialog_rules={}` or `--no-default-rules` for the strictest mode. Rules may not answer data-modifying confirmations.
 - Company plugins, URLs and screenshots are excluded by `.gitignore`.

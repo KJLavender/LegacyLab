@@ -22,7 +22,7 @@ from core.ocr.template import TemplateOcr
 from core.trace import Trace
 from core.win32 import UnexpectedDialog
 from plugins.base import WriteBlocked
-from plugins.legacyapp import LegacyAppPlugin
+from plugins.legacyapp import DEFAULT_DIALOG_RULES, LegacyAppPlugin
 
 DATA = ROOT / "sim_data"
 TASKS = ROOT / "bench" / "tasks"
@@ -172,12 +172,14 @@ def main() -> None:
     ap.add_argument("--tasks", default="all")
     ap.add_argument("--seed", type=int, default=100)
     ap.add_argument("--dpi", type=float, default=1.0)
-    ap.add_argument("--dialog-rule", action="append", default=[], help='"內文片段=按鈕"，可重複')
+    ap.add_argument("--dialog-rule", action="append", default=[], help='"內文片段=按鈕"，可重複；加在預設規則之上')
+    ap.add_argument("--no-default-rules", action="store_true", help="不用預設的對話框規則（測最嚴格的情況）")
     ap.add_argument("--portal", action="store_true", help="透過假入口網站 + 一次性 token 啟動")
     ap.add_argument("--portal-port", type=int, default=8765)
     a = ap.parse_args()
 
-    rules = dict(r.split("=", 1) for r in a.dialog_rule)
+    rules = {} if a.no_default_rules else dict(DEFAULT_DIALOG_RULES)
+    rules.update(dict(r.split("=", 1) for r in a.dialog_rule))
     files = sorted(TASKS.glob("*.yaml"))
     tasks = [yaml.safe_load(f.read_text(encoding="utf-8")) for f in files]
     if a.tasks != "all":

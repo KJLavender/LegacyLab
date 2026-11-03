@@ -41,5 +41,5 @@ setup.bat
 ## 安全規則
 
 - 預設唯讀。會改資料的動作（`write_actions`）沒有放進 `allow_write` 時，在碰到 GUI 之前就丟 `WriteBlocked`。
-- 只自動按單一按鈕的對話框。多按鈕對話框會讓這次執行失敗，除非使用者明確設定 `dialog_rules`；規則不能用來回答會改資料的確認框。
+- 單一按鈕的對話框自動按掉。多按鈕對話框只照 `dialog_rules`（內文片段 → 標準按鈕名稱，如 `Yes` / `No`；用控制項 ID 比對，任何 Windows 語系都適用）處理，其餘一律讓這次執行失敗。預設是 `{"Reconnect now?": "Yes"}`；要最嚴格的模式就設 `dialog_rules={}` 或加 `--no-default-rules`。規則不能用來回答會改資料的確認框。
 - 公司 plugin、網址、截圖都列在 `.gitignore`。

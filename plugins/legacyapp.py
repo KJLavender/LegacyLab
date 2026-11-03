@@ -26,6 +26,9 @@ GRID = {"header": 20, "row": 18, "border": 2, "widths": [80, 130, 100, 90, 70]}
 GRID_WIDTH_100 = 544
 # 已知只有固定幾種值的欄位：OCR 結果貼齊最接近的合法值
 COLUMN_VOCAB = {"kind": ("variable", "count")}
+# 預設的多按鈕對話框規則（內文片段 → 按鈕）。只放「不會改資料」的對話框；
+# 按鈕用標準名稱（Yes/No/OK/Cancel/Retry），任何語系都對得到。設定 dialog_rules={} 可關掉。
+DEFAULT_DIALOG_RULES = {"Reconnect now?": "Yes"}
 # 圖表視窗標題「C0011 / CVD001 / THK」對應的欄位：開圖後可以用 hwnd 精確讀到
 TITLE_COLUMNS = ("chart_id", "equip_id", "param")
 
@@ -48,8 +51,8 @@ class LegacyAppPlugin(AppPlugin):
         self.exe = Path(c.get("exe", ROOT / "sim/legacyapp/bin/LegacyApp.exe"))
         self.data = Path(c.get("data", ROOT / "sim_data"))
         self.timeout = float(c.get("timeout", 20))
-        # 多按鈕對話框的處理規則（內文片段 → 按鈕）。必須由使用者明確設定；預設沒有。
-        self.dialog_rules: dict[str, str] = dict(c.get("dialog_rules", {}))
+        # 多按鈕對話框的處理規則（內文片段 → 按鈕）；沒指定時用 DEFAULT_DIALOG_RULES
+        self.dialog_rules: dict[str, str] = dict(c.get("dialog_rules", DEFAULT_DIALOG_RULES))
         if any("modify" in k.lower() for k in self.dialog_rules):
             raise ValueError("dialog_rules must not answer data-modifying confirmations")
         users = Path(c.get("users", ROOT / "sim/legacyapp/users.ini"))

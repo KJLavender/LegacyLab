@@ -341,6 +341,10 @@ def button_label(text: str) -> str:
     return re.sub(r"\(&?\w\)$", "", text.replace("&", "")).strip()
 
 
+# MessageBox 標準按鈕的控制項 ID：不受 Windows 語系影響（中文是「否(&N)」，英文是「No」）
+STD_BUTTON_IDS = {"OK": 1, "Cancel": 2, "Abort": 3, "Retry": 4, "Ignore": 5, "Yes": 6, "No": 7}
+
+
 def handle_dialogs(pid: int, rules: dict[str, str] | None = None, skip_titles: tuple[str, ...] = ()) -> list[str]:
     """只自動按「單一按鈕」的對話框；多按鈕的對話框只照 rules（內文片段 → 按鈕文字）處理，
     沒有規則就丟 UnexpectedDialog。開檔/存檔對話框不在這裡處理。回傳已關掉的對話框內容。"""
@@ -354,7 +358,8 @@ def handle_dialogs(pid: int, rules: dict[str, str] | None = None, skip_titles: t
             closed.append(f"{d.text}: {text}")
         elif len(buttons) > 1:
             answer = next((btn for frag, btn in (rules or {}).items() if frag in text), None)
-            target = next((b for b in buttons if answer and button_label(b.text) == answer), None)
+            target = next((b for b in buttons if answer and (b.ctrl_id == STD_BUTTON_IDS.get(answer)
+                                                              or button_label(b.text) == answer)), None)
             if target is None:
                 raise UnexpectedDialog(d.hwnd, d.text, text, [b.text for b in buttons])
             click_button(target.hwnd)
