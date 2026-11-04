@@ -1,0 +1,6 @@
+id: lot_lookup
+description: By Lot 頁籤：標準 ListView，用 hwnd 跨行程直接讀（32 位元目標程式）
+actions:
+  - lots: {prefix: L0100}
+evaluate:
+  - lots_match_truth

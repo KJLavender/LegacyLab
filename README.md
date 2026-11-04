@@ -11,17 +11,19 @@ Nothing here touches a real company system or real data, so it can be developed 
 | Path | What it is |
 | --- | --- |
 | `sim/datagen/` | Generates equipment, charts and measurements with injected anomalies (shift, drift, outliers, skewed counts) plus `answer_key.json`. Fixed seeds. |
-| `sim/legacyapp/` | Fake legacy app in C# WinForms, built with the `csc.exe` that ships with Windows. Version MsgBox, LOGIN window, busy-wait dialog, owner-drawn grid (GDI text, no API), fixed 697×505 chart window, `Tools > Export Data`, a data-modifying `Exclude` menu. |
+| `sim/legacyapp/` | Fake legacy app in C# WinForms, built with the `csc.exe` that ships with Windows. Version MsgBox, LOGIN window, busy-wait dialog, two tabs, cascading dropdowns that load asynchronously, owner-drawn grid (GDI text, no API), a standard ListView (`By Lot`), fixed 697×505 chart window, `Tools > Export Data`, a data-modifying `Exclude` menu, and session expiry that forces a re-login mid-task. |
 | `sim/portal/`, `sim/launcher/` | Fake portal + SSO (Starlette, 127.0.0.1 only) that issues one-time tokens, and a `legacyapp://` protocol handler that validates the URL and starts LegacyApp (like a VBS launcher). `register.py` registers the protocol under HKCU; the benchmark calls the handler directly and does not need it. |
-| `sim/chaos.ini` | Chaos mode: random delays, popups (single- and multi-button), token expiry, focus stealing, DPI scaling, comma decimals. Levels `off` / `light` / `heavy`. |
-| `core/win32.py` | ctypes-only Win32 layer: find windows, read/write controls, native menus, background clicks via `PostMessage`, `PrintWindow` capture, dialog policy. |
-| `core/ocr/` | Swappable OCR engines: fixed-font **template matching**, **RapidOCR**, and `FallbackOcr` (template first, RapidOCR only when unsure). |
+| `sim/chaos.ini` | Chaos mode: random delays, popups (single- and multi-button), token expiry, session timeout, slow dependent-list loading, focus stealing, DPI scaling, comma decimals. Levels `off` / `light` / `heavy`. |
+| `core/win32.py` | ctypes-only Win32 layer: find windows, read/write controls, native menus, background clicks via `PostMessage`, tab switching, cross-process ListView reading (32/64-bit aware), `PrintWindow` capture that waits for a fully painted control, dialog policy. |
+| `core/ocr/` | Swappable OCR engines: fixed-font **template matching**, **RapidOCR**, and `FallbackOcr` (template first, RapidOCR only when unsure); `VerifiedCache` remembers cells already confirmed through exact Win32 text. |
 | `core/launcher.py` | Config-driven launch through the portal: log in, pick a function, read the protocol URL, hand it to the handler. |
 | `core/locator.py` | Layered fallback: `api → hwnd → msaa → image → ocr`, with stats on which layer was used. |
 | `core/trace.py` | Failure trace: per-step timing, and on failure a screenshot, window tree and traceback. |
 | `plugins/` | `AppPlugin` interface and the `legacyapp` domain module. Write actions are blocked unless explicitly allowed. |
-| `analysis/` | SPC (baseline 3σ, I-MR + Nelson rules, Laney c′ for counts, and the `shewhart` library behind the same interface) and change-point detection (CUSUM, PELT, ADWIN). |
+| `analysis/` | SPC (baseline 3σ, I-MR + Nelson rules, Laney c′ for counts, and the `shewhart` library behind the same interface), change-point detection (CUSUM, PELT, ADWIN), and `pipeline.py`: SPC raises the alarm, PELT locates the starting lot. |
 | `bench/` | `analysis_bench` (E1/E2, `--per-rule`), `ocr_bench` (E3), `ocr_calibrate` (self-labels template OCR from exact chart titles read via Win32), `e2e_bench` (YAML tasks × chaos levels, `--portal`, `--dialog-rule`). Results go to `bench/results/*.json` with git commit and seed. |
+| `tools/patrol.py` | E5 patrol: export and analyze every chart, write an HTML report with anomalies first (`--score` grades it against the answer key). |
+| `tools/demo.py` | Slow, narrated end-to-end demo with a screenshot per step. |
 | `tools/inspect_window.py` | Read-only dump of a window's control tree and MSAA text, to see what can be read without OCR. |
 
 ## Quick start
@@ -33,6 +35,7 @@ setup.bat
 .venv\Scripts\python -m bench.ocr_calibrate
 .venv\Scripts\python -m bench.e2e_bench --levels off,light,heavy --repeats 3
 .venv\Scripts\python -m bench.e2e_bench --portal
+.venv\Scripts\python tools/patrol.py --score
 .venv\Scripts\python -m pytest
 ```
 

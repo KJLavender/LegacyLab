@@ -1,0 +1,7 @@
+id: equip_filter_naive
+description: 同 equip_filter，但不等清單載入就選（重現時序競爭的錯誤，對照用）
+config: {wait_lists: false}
+actions:
+  - query: {equip_type: PHOTO, equip_id: PHOB8023}
+evaluate:
+  - query_ids_match_truth

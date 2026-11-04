@@ -1,0 +1,6 @@
+id: lot_lookup_ocr
+description: 同 lot_lookup，但強制用 OCR（逐頁捲動擷圖）讀 ListView，對照 hwnd 的準確度與速度
+actions:
+  - lots: {prefix: L0100, mode: ocr}
+evaluate:
+  - lots_match_truth

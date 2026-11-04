@@ -139,3 +139,19 @@ def test_trace_records_failed_step(tmp_path):
     steps = json.loads(path.read_text(encoding="utf-8"))
     assert steps[0]["ok"] is False and steps[0]["children"][0]["error"] == "RuntimeError: boom"
     assert "traceback" in steps[0]["children"][0] and "traceback" not in steps[0]
+
+
+def test_verified_cache_keys_on_raw_pixels(tmp_path):
+    from core.ocr.cache import VerifiedCache
+
+    FONT["Å"] = FONT["A"]
+    try:
+        a, a_sel = render("A0"), render("A0", selected=True)
+        c = VerifiedCache(tmp_path / "c.json")
+        c.put(a, "A0")
+        assert c.get(render("A0")) == "A0"          # 同樣的像素 → 命中
+        assert c.get(a_sel) is None                  # 反白列像素不同 → 不命中
+        c.save()
+        assert VerifiedCache(tmp_path / "c.json").get(a) == "A0"
+    finally:
+        del FONT["Å"]

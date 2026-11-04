@@ -20,6 +20,12 @@ kernel32.GetExitCodeProcess.argtypes = [wt.HANDLE, ctypes.POINTER(wt.DWORD)]
 kernel32.WaitForSingleObject.argtypes = [wt.HANDLE, wt.DWORD]
 kernel32.TerminateProcess.argtypes = [wt.HANDLE, wt.UINT]
 kernel32.CloseHandle.argtypes = [wt.HANDLE]
+kernel32.VirtualAllocEx.restype = ctypes.c_void_p
+kernel32.VirtualAllocEx.argtypes = [wt.HANDLE, ctypes.c_void_p, ctypes.c_size_t, wt.DWORD, wt.DWORD]
+kernel32.VirtualFreeEx.argtypes = [wt.HANDLE, ctypes.c_void_p, ctypes.c_size_t, wt.DWORD]
+kernel32.WriteProcessMemory.argtypes = [wt.HANDLE, ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_void_p]
+kernel32.ReadProcessMemory.argtypes = [wt.HANDLE, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p]
+kernel32.IsWow64Process.argtypes = [wt.HANDLE, ctypes.POINTER(wt.BOOL)]
 
 # 座標一律用實體像素；DPI 縮放時和擷圖對得上
 try:
@@ -32,11 +38,15 @@ WM_COMMAND, WM_CLOSE = 0x0111, 0x0010
 WM_KEYDOWN, WM_KEYUP = 0x0100, 0x0101
 WM_LBUTTONDOWN, WM_LBUTTONUP, WM_LBUTTONDBLCLK = 0x0201, 0x0202, 0x0203
 BM_CLICK = 0x00F5
-CB_SELECTSTRING, CB_GETCURSEL = 0x014D, 0x0147
+CB_SELECTSTRING, CB_GETCURSEL, CB_SETCURSEL, CB_GETCOUNT, CB_FINDSTRINGEXACT = 0x014D, 0x0147, 0x014E, 0x0146, 0x0158
+LVM_GETITEMCOUNT, LVM_GETHEADER, LVM_GETCOLUMNWIDTH, LVM_GETITEMTEXTW = 0x1004, 0x101F, 0x101D, 0x1073
+HDM_GETITEMCOUNT = 0x1200
+TCM_GETITEMCOUNT, TCM_GETCURSEL, TCM_GETITEMRECT = 0x1304, 0x130B, 0x130A
 CBN_SELCHANGE = 1
 SMTO_ABORTIFHUNG = 0x0002
 GW_OWNER = 4
 PW_RENDERFULLCONTENT = 2
+RDW_INVALIDATE, RDW_UPDATENOW, RDW_ALLCHILDREN = 0x0001, 0x0100, 0x0080
 
 VK = {"enter": 0x0D, "esc": 0x1B, "tab": 0x09, "up": 0x26, "down": 0x28,
       "pageup": 0x21, "pagedown": 0x22, "home": 0x24, "end": 0x23}
@@ -69,6 +79,7 @@ gdi32.DeleteObject.argtypes = [wt.HGDIOBJ]
 gdi32.DeleteDC.argtypes = [wt.HDC]
 user32.ReleaseDC.argtypes = [wt.HWND, wt.HDC]
 user32.PrintWindow.argtypes = [wt.HWND, wt.HDC, wt.UINT]
+user32.RedrawWindow.argtypes = [wt.HWND, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]
 gdi32.GetDIBits.argtypes = [wt.HDC, wt.HBITMAP, wt.UINT, wt.UINT, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]
 
 
@@ -256,10 +267,12 @@ def click_button(hwnd: int) -> None:
 
 
 def combo_select(hwnd: int, text: str) -> bool:
+    """完全比對選項文字（CB_SELECTSTRING 是前綴比對，"CVD001" 可能選到 "CVD0010"）。"""
     buf = ctypes.create_unicode_buffer(text)
-    idx = user32.SendMessageW(hwnd, CB_SELECTSTRING, ctypes.c_size_t(-1).value, ctypes.addressof(buf))
+    idx = user32.SendMessageW(hwnd, CB_FINDSTRINGEXACT, ctypes.c_size_t(-1).value, ctypes.addressof(buf))
     if idx < 0:
         return False
+    user32.SendMessageW(hwnd, CB_SETCURSEL, idx, 0)
     parent = user32.GetParent(hwnd)
     wparam = (CBN_SELCHANGE << 16) | (user32.GetDlgCtrlID(hwnd) & 0xFFFF)
     user32.SendMessageW(parent, WM_COMMAND, wparam, hwnd)
@@ -316,6 +329,100 @@ def menu_command(hwnd: int, path: list[str]) -> None:
         hmenu = user32.GetSubMenu(hmenu, match[0])
 
 
+# ---------- 跨行程讀取標準控制項（ListView / TabControl）----------
+
+class RemoteBuffer:
+    """在目標行程裡配置一塊記憶體：ListView、TabControl 的訊息參數必須放在對方的位址空間。"""
+
+    VM_OPS = 0x0008 | 0x0010 | 0x0020 | 0x0400   # VM_OPERATION | VM_READ | VM_WRITE | QUERY_INFORMATION
+
+    def __init__(self, pid: int, size: int):
+        self.size = size
+        self.h = kernel32.OpenProcess(self.VM_OPS, False, pid)
+        if not self.h:
+            raise Win32Error(f"cannot open process {pid} for memory access")
+        self.addr = kernel32.VirtualAllocEx(self.h, None, size, 0x3000, 0x04)  # COMMIT|RESERVE, READWRITE
+        if not self.addr:
+            kernel32.CloseHandle(self.h)
+            raise Win32Error("VirtualAllocEx failed")
+
+    @property
+    def is_32bit_target(self) -> bool:
+        wow = wt.BOOL()
+        kernel32.IsWow64Process(self.h, ctypes.byref(wow))
+        return bool(wow) or ctypes.sizeof(ctypes.c_void_p) == 4
+
+    def write(self, data: bytes, offset: int = 0) -> None:
+        kernel32.WriteProcessMemory(self.h, self.addr + offset, data, len(data), None)
+
+    def read(self, n: int, offset: int = 0) -> bytes:
+        buf = ctypes.create_string_buffer(n)
+        kernel32.ReadProcessMemory(self.h, self.addr + offset, buf, n, None)
+        return buf.raw
+
+    def close(self) -> None:
+        kernel32.VirtualFreeEx(self.h, self.addr, 0, 0x8000)  # MEM_RELEASE
+        kernel32.CloseHandle(self.h)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def listview_rows(hwnd: int) -> list[list[str]]:
+    """讀標準 ListView（SysListView32）全部的列與欄，不用擷圖、不用 OCR。
+
+    LVITEMW 裡有指標，32 位元和 64 位元的結構長得不一樣，要依目標行程決定。
+    """
+    import struct
+
+    n_rows = user32.SendMessageW(hwnd, LVM_GETITEMCOUNT, 0, 0)
+    header = user32.SendMessageW(hwnd, LVM_GETHEADER, 0, 0)
+    n_cols = user32.SendMessageW(header, HDM_GETITEMCOUNT, 0, 0) if header else 1
+    text_max = 260
+    rows = []
+    with RemoteBuffer(get_pid(hwnd), 128 + text_max * 2) as mem:
+        text_addr = mem.addr + 128
+        if mem.is_32bit_target:   # mask, iItem, iSubItem, state, stateMask, pszText(4), cchTextMax
+            pack = lambda sub: struct.pack("<IiiIIIi", 0x1, 0, sub, 0, 0, text_addr, text_max)
+        else:                      # 同上，但 pszText 是 8 bytes，前面有 4 bytes 對齊
+            pack = lambda sub: struct.pack("<IiiIIIQi", 0x1, 0, sub, 0, 0, 0, text_addr, text_max)
+        for i in range(n_rows):
+            row = []
+            for c in range(n_cols):
+                mem.write(pack(c))
+                n = user32.SendMessageW(hwnd, LVM_GETITEMTEXTW, i, mem.addr)
+                row.append(mem.read(n * 2, 128).decode("utf-16-le") if n > 0 else "")
+            rows.append(row)
+    return rows
+
+
+def listview_column_widths(hwnd: int) -> list[int]:
+    header = user32.SendMessageW(hwnd, LVM_GETHEADER, 0, 0)
+    n = user32.SendMessageW(header, HDM_GETITEMCOUNT, 0, 0) if header else 0
+    return [user32.SendMessageW(hwnd, LVM_GETCOLUMNWIDTH, i, 0) for i in range(n)]
+
+
+def tab_select(hwnd: int, index: int) -> None:
+    """點頁籤切頁。只送 TCM_SETCURSEL 不會觸發 WinForms 的切頁事件，所以要真的點下去。"""
+    import struct
+
+    if user32.SendMessageW(hwnd, TCM_GETCURSEL, 0, 0) == index:
+        return
+    if not 0 <= index < user32.SendMessageW(hwnd, TCM_GETITEMCOUNT, 0, 0):
+        raise Win32Error(f"tab {index} out of range")
+    with RemoteBuffer(get_pid(hwnd), 16) as mem:   # RECT 沒有指標，32/64 位元一樣
+        user32.SendMessageW(hwnd, TCM_GETITEMRECT, index, mem.addr)
+        l, t, r, b = struct.unpack("<iiii", mem.read(16))
+    post_click(hwnd, (l + r) // 2, (t + b) // 2)
+
+
+def tab_index(hwnd: int) -> int:
+    return user32.SendMessageW(hwnd, TCM_GETCURSEL, 0, 0)
+
+
 # ---------- 對話框 ----------
 
 def dialogs(pid: int) -> list[Win]:
@@ -369,8 +476,11 @@ def handle_dialogs(pid: int, rules: dict[str, str] | None = None, skip_titles: t
 
 # ---------- 擷圖 ----------
 
-def capture(hwnd: int, crop_child: int | None = None):
-    """用 PrintWindow 擷取視窗（被遮住也能擷）。crop_child 指定時裁出該子控制項。"""
+def capture(hwnd: int, crop_child: int | None = None, flags: int = PW_RENDERFULLCONTENT):
+    """用 PrintWindow 擷取視窗（被遮住也能擷）。crop_child 指定時裁出該子控制項。
+
+    拿到的是 DWM 最後合成的畫面，可能是畫到一半的狀態；內容要可靠時用 capture_stable()。
+    """
     from PIL import Image
 
     l, t, r, b = get_rect(hwnd)
@@ -382,7 +492,7 @@ def capture(hwnd: int, crop_child: int | None = None):
     bmp = gdi32.CreateCompatibleBitmap(hdc_screen, w, h)
     old = gdi32.SelectObject(hdc, bmp)
     try:
-        if not user32.PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT):
+        if not user32.PrintWindow(hwnd, hdc, flags):
             raise Win32Error("PrintWindow failed")
 
         class BITMAPINFOHEADER(ctypes.Structure):
@@ -404,6 +514,34 @@ def capture(hwnd: int, crop_child: int | None = None):
         cl, ct, cr, cb = get_rect(crop_child)
         img = img.crop((cl - l, ct - t, cr - l, cb - t))
     return img
+
+
+def capture_stable(hwnd: int, crop_child: int | None = None, timeout: float = 3.0, interval: float = 0.15):
+    """等畫面穩定再擷：先要求整塊重畫，再連續擷圖到前後兩張完全相同。
+
+    實測：結果若是在對話框底下填進去的，關掉對話框後那塊不一定會重畫；
+    而跨行程的 RedrawWindow 不會等對方畫完，馬上擷會拿到畫一半的畫面。
+    """
+    user32.RedrawWindow(crop_child or hwnd, None, None, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN)
+    end = time.monotonic() + timeout
+    prev = capture(hwnd, crop_child)
+    while True:
+        time.sleep(interval)
+        cur = capture(hwnd, crop_child)
+        if cur.tobytes() == prev.tobytes() or time.monotonic() > end:
+            return cur
+        prev = cur
+
+
+def capture_control(parent: int, child: int):
+    """擷取單一控制項的內容（OCR 用）。
+
+    先用 PrintWindow(child, 0)：控制項同步把自己完整畫進我們的 DC，不會拿到 DWM 裡畫一半的畫面
+    （實測 ListView 用 DWM 擷圖時，有字的列數會在 18–25 之間跳動）。
+    有些舊控制項不處理 WM_PRINT、畫出來是空白，這時退回「等 DWM 畫面穩定再擷」。
+    """
+    img = capture(child, flags=0)
+    return capture_stable(parent, crop_child=child) if is_blank(img) else img
 
 
 def is_blank(img, tol: int = 4) -> bool:

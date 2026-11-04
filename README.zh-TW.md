@@ -11,17 +11,19 @@
 | 路徑 | 內容 |
 | --- | --- |
 | `sim/datagen/` | 產生機台、圖表、量測值，注入已知異常（平移、漂移、離群、偏態計數），同時輸出 `answer_key.json`。固定亂數種子。 |
-| `sim/legacyapp/` | 假舊系統（C# WinForms），用 Windows 內建的 `csc.exe` 編譯。版本 MsgBox、LOGIN 視窗、Busy Wait、自繪表格（GDI 畫字、無 API）、固定 697×505 圖表視窗、`Tools > Export Data`、會改資料的 `Exclude` 選單。 |
+| `sim/legacyapp/` | 假舊系統（C# WinForms），用 Windows 內建的 `csc.exe` 編譯。版本 MsgBox、LOGIN 視窗、Busy Wait、兩個頁籤、非同步載入的連動下拉選單、自繪表格（GDI 畫字、無 API）、標準 ListView（`By Lot`）、固定 697×505 圖表視窗、`Tools > Export Data`、會改資料的 `Exclude` 選單，以及做到一半會過期、要求重新登入的 session。 |
 | `sim/portal/`、`sim/launcher/` | 假入口網站 + SSO（Starlette，只綁 127.0.0.1），發一次性 token；`legacyapp://` 協定處理程式檢查 URL 後啟動 LegacyApp（仿 VBS 啟動程式）。`register.py` 可把協定註冊到 HKCU；bench 直接呼叫處理程式，不需要註冊。 |
-| `sim/chaos.ini` | 混沌模式：隨機延遲、突發對話框（單按鈕／多按鈕）、token 過期、搶焦點、DPI 縮放、逗號小數點。分 `off` / `light` / `heavy` 三級。 |
-| `core/win32.py` | 只用 ctypes 的 Win32 層：找視窗、讀寫控制項、原生選單、用 `PostMessage` 背景點擊、`PrintWindow` 擷圖、對話框處理規則。 |
-| `core/ocr/` | 可切換的 OCR 引擎：固定字型**模板比對**、**RapidOCR**、`FallbackOcr`（先用模板，認不出才交給 RapidOCR）。 |
+| `sim/chaos.ini` | 混沌模式：隨機延遲、突發對話框（單按鈕／多按鈕）、token 過期、session 過期、連動清單載入變慢、搶焦點、DPI 縮放、逗號小數點。分 `off` / `light` / `heavy` 三級。 |
+| `core/win32.py` | 只用 ctypes 的 Win32 層：找視窗、讀寫控制項、原生選單、用 `PostMessage` 背景點擊、切換頁籤、跨行程讀 ListView（分辨 32/64 位元）、等控制項畫完才擷圖的 `PrintWindow`、對話框處理規則。 |
+| `core/ocr/` | 可切換的 OCR 引擎：固定字型**模板比對**、**RapidOCR**、`FallbackOcr`（先用模板，認不出才交給 RapidOCR）；`VerifiedCache` 記住已經用 Win32 精確文字確認過的儲存格。 |
 | `core/launcher.py` | 依設定透過入口網站啟動：登入、點功能、取得協定 URL、交給處理程式。 |
 | `core/locator.py` | 定位方式依序退回：`api → hwnd → msaa → image → ocr`，並統計每次用到哪一層。 |
 | `core/trace.py` | 失敗現場紀錄：每一步的耗時；失敗時存截圖、視窗樹和例外。 |
 | `plugins/` | `AppPlugin` 介面與 `legacyapp` 領域模組。會改資料的動作預設擋下。 |
-| `analysis/` | 管制圖（基準 3σ、I-MR + Nelson 規則、計數資料用 Laney c′，以及包在同一介面下的 `shewhart` 函式庫）與變化點偵測（CUSUM、PELT、ADWIN）。 |
+| `analysis/` | 管制圖（基準 3σ、I-MR + Nelson 規則、計數資料用 Laney c′，以及包在同一介面下的 `shewhart` 函式庫）、變化點偵測（CUSUM、PELT、ADWIN），以及 `pipeline.py`：SPC 發警報、PELT 找起始 lot。 |
 | `bench/` | `analysis_bench`（E1/E2，`--per-rule` 逐條規則）、`ocr_bench`（E3）、`ocr_calibrate`（用 Win32 讀到的圖表標題自動標註、訓練模板 OCR）、`e2e_bench`（YAML 任務 × 混沌等級，`--portal`、`--dialog-rule`）。結果存到 `bench/results/*.json`，附 git commit 與種子。 |
+| `tools/patrol.py` | E5 巡檢：每張圖匯出、分析，產生 HTML 報告，異常排最前面（`--score` 用答案卷打分數）。 |
+| `tools/demo.py` | 放慢速度、每步截圖的完整流程 demo。 |
 | `tools/inspect_window.py` | 唯讀列出視窗的控制項樹與 MSAA 文字，確認哪些東西不用 OCR 就讀得到。 |
 
 ## 快速開始
@@ -33,6 +35,7 @@ setup.bat
 .venv\Scripts\python -m bench.ocr_calibrate
 .venv\Scripts\python -m bench.e2e_bench --levels off,light,heavy --repeats 3
 .venv\Scripts\python -m bench.e2e_bench --portal
+.venv\Scripts\python tools/patrol.py --score
 .venv\Scripts\python -m pytest
 ```
 

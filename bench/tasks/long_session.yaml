@@ -1,0 +1,12 @@
+id: long_session
+description: 連續開圖匯出 6 張（heavy 下會超過 session 期限 20 秒），測中途過期、重新登入、重做
+actions:
+  - query: {equip_type: CVD}
+  - export: {item: $0}
+  - export: {item: $3}
+  - export: {item: $6}
+  - export: {item: $9}
+  - export: {item: $12}
+  - export: {item: $15}
+evaluate:
+  - all_exports_match_truth

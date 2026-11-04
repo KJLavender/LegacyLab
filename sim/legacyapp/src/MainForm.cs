@@ -7,12 +7,16 @@ namespace LegacyApp
 {
     class MainForm : Form
     {
-        TextBox txtEquip, txtDays, txtPoints;
-        ComboBox cboType;
-        Button btnQuery;
+        TextBox txtDays, txtPoints, txtLot;
+        ComboBox cboType, cboEquip;
+        Button btnQuery, btnLot;
         ResultGrid grid;
+        ListView lvLots;
         StatusBar status;
         ChartForm chart;
+        int loadGeneration;          // 連動下拉選單：只接受最後一次載入的結果
+        DateTime sessionStart = DateTime.Now;
+        bool sessionPrompting;
 
         public MainForm()
         {
@@ -21,7 +25,7 @@ namespace LegacyApp
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(560, 520);
+            ClientSize = new Size(560, 560);
 
             // MainMenu 是原生 Win32 選單（和 VB6 一樣），可以用 GetMenu / WM_COMMAND 操作
             MainMenu menu = new MainMenu();
@@ -34,29 +38,101 @@ namespace LegacyApp
             });
             Menu = menu;
 
-            GroupBox box = new GroupBox { Text = "View By Equipment", Location = new Point(8, 6), Size = new Size(544, 76) };
-            box.Controls.Add(new Label { Text = "EquipmentID", Location = new Point(10, 22), AutoSize = true });
-            txtEquip = new TextBox { Location = new Point(10, 40), Width = 120 };
-            box.Controls.Add(new Label { Text = "EquipType", Location = new Point(140, 22), AutoSize = true });
-            cboType = new ComboBox { Location = new Point(140, 40), Width = 90, DropDownStyle = ComboBoxStyle.DropDownList };
+            TabControl tabs = new TabControl { Location = new Point(4, 4), Size = new Size(552, 530) };
+            TabPage pageEquip = new TabPage("By Equipment");
+            TabPage pageLot = new TabPage("By Lot");
+            tabs.TabPages.Add(pageEquip);
+            tabs.TabPages.Add(pageLot);
+
+            // ---- By Equipment ----
+            GroupBox box = new GroupBox { Text = "View By Equipment", Location = new Point(2, 2), Size = new Size(540, 76) };
+            box.Controls.Add(new Label { Text = "EquipType", Location = new Point(10, 22), AutoSize = true });
+            cboType = new ComboBox { Location = new Point(10, 40), Width = 90, DropDownStyle = ComboBoxStyle.DropDownList };
             cboType.Items.Add("ALL");
             foreach (string t in Program.Data.EquipTypes) cboType.Items.Add(t);
-            cboType.SelectedIndex = 0;
+            box.Controls.Add(new Label { Text = "EquipmentID", Location = new Point(110, 22), AutoSize = true });
+            cboEquip = new ComboBox { Location = new Point(110, 40), Width = 120, DropDownStyle = ComboBoxStyle.DropDownList };
             box.Controls.Add(new Label { Text = "Days", Location = new Point(240, 22), AutoSize = true });
             txtDays = new TextBox { Location = new Point(240, 40), Width = 50, Text = "30" };
             box.Controls.Add(new Label { Text = "Points", Location = new Point(300, 22), AutoSize = true });
             txtPoints = new TextBox { Location = new Point(300, 40), Width = 50, Text = "60" };
-            btnQuery = new Button { Text = "Query", Location = new Point(450, 38), Width = 80 };
+            btnQuery = new Button { Text = "Query", Location = new Point(446, 38), Width = 80 };
             btnQuery.Click += delegate { RunQuery(); };
-            box.Controls.AddRange(new Control[] { txtEquip, cboType, txtDays, txtPoints, btnQuery });
+            box.Controls.AddRange(new Control[] { cboType, cboEquip, txtDays, txtPoints, btnQuery });
+            cboType.SelectedIndexChanged += delegate { LoadEquipList(); };
 
-            grid = new ResultGrid { Location = new Point(8, 90), Size = new Size(544, 400) };
+            grid = new ResultGrid { Location = new Point(2, 84), Size = new Size(544, 400) };
             grid.RowActivated += OpenChart;
+            pageEquip.Controls.AddRange(new Control[] { box, grid });
+
+            // ---- By Lot：標準 ListView（原生 SysListView32，可以跨行程用訊息讀）----
+            pageLot.Controls.Add(new Label { Text = "Lot prefix", Location = new Point(8, 12), AutoSize = true });
+            txtLot = new TextBox { Location = new Point(80, 9), Width = 120 };
+            btnLot = new Button { Text = "Search", Location = new Point(210, 7), Width = 80 };
+            btnLot.Click += delegate { RunLotQuery(); };
+            lvLots = new ListView { Location = new Point(2, 40), Size = new Size(540, 460), View = View.Details,
+                                    FullRowSelect = true, GridLines = true, HideSelection = false };
+            foreach (string h in new string[] { "Lot", "Chart ID", "Equipment ID", "Points", "Mean", "Max" })
+                lvLots.Columns.Add(h, h == "Equipment ID" ? 110 : 80);
+            pageLot.Controls.AddRange(new Control[] { txtLot, btnLot, lvLots });
 
             status = new StatusBar { Text = "Ready" };
-            Controls.AddRange(new Control[] { box, grid, status });
+            Controls.AddRange(new Control[] { tabs, status });
             AcceptButton = btnQuery;
+            cboType.SelectedIndex = 0;   // 觸發第一次載入機台清單
             ChaosUi.ApplyDpi(this);
+
+            Timer session = new Timer { Interval = 500 };
+            session.Tick += delegate { CheckSession(); };
+            session.Start();
+        }
+
+        // 選 EquipType 後，機台清單延遲載入；載入期間不能查詢。快速切換時，舊的載入結果作廢。
+        void LoadEquipList()
+        {
+            int gen = ++loadGeneration;
+            string type = (string)cboType.SelectedItem;
+            btnQuery.Enabled = false;
+            cboEquip.Items.Clear();
+            cboEquip.Items.Add("(Loading...)");
+            cboEquip.SelectedIndex = 0;
+            status.Text = "Loading equipment list...";
+            Timer t = new Timer { Interval = Program.Chaos.ListDelay() };
+            t.Tick += delegate
+            {
+                t.Stop();
+                if (gen != loadGeneration) return;
+                cboEquip.Items.Clear();
+                cboEquip.Items.Add("(All)");
+                List<string> seen = new List<string>();
+                foreach (ChartInfo c in Program.Data.Charts)
+                    if ((type == "ALL" || c.EquipType == type) && !seen.Contains(c.EquipId)) seen.Add(c.EquipId);
+                foreach (string e in seen) cboEquip.Items.Add(e);
+                cboEquip.SelectedIndex = 0;
+                btnQuery.Enabled = true;
+                status.Text = "Ready";
+            };
+            t.Start();
+        }
+
+        // Session 到期：先跳單按鈕通知，再要求重新登入；登入前整個程式被模態視窗擋住
+        void CheckSession()
+        {
+            int limit = Program.Chaos.SessionTimeoutS;
+            if (limit <= 0 || sessionPrompting || (DateTime.Now - sessionStart).TotalSeconds < limit) return;
+            sessionPrompting = true;
+            try
+            {
+                if (chart != null && !chart.IsDisposed) chart.Close();
+                MessageBox.Show(this, "Session expired. Please login again.", "LegacyApp",
+                    MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                using (LoginForm login = new LoginForm(Program.Repo))
+                {
+                    if (login.ShowDialog(this) != DialogResult.OK) { Close(); return; }
+                }
+                sessionStart = DateTime.Now;
+            }
+            finally { sessionPrompting = false; }
         }
 
         void RunQuery()
@@ -72,11 +148,11 @@ namespace LegacyApp
             {
                 t.Stop();
                 List<ChartInfo> rows = new List<ChartInfo>();
-                string equip = txtEquip.Text.Trim();
+                string equip = cboEquip.SelectedIndex > 0 ? (string)cboEquip.SelectedItem : "";
                 string type = (string)cboType.SelectedItem;
                 foreach (ChartInfo c in Program.Data.Charts)
                 {
-                    if (equip.Length > 0 && c.EquipId.IndexOf(equip, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    if (equip.Length > 0 && c.EquipId != equip) continue;
                     if (type != "ALL" && c.EquipType != type) continue;
                     rows.Add(c);
                 }
@@ -84,6 +160,55 @@ namespace LegacyApp
                 busy.Close();
                 btnQuery.Enabled = true;
                 status.Text = rows.Count + " record(s) found";
+            };
+            t.Start();
+        }
+
+        void RunLotQuery()
+        {
+            btnLot.Enabled = false;
+            status.Text = "Searching...";
+            BusyForm busy = new BusyForm();
+            busy.Show(this);
+            ChaosUi.MaybeDisturb(this);
+            Timer t = new Timer { Interval = Program.Chaos.Delay() };
+            t.Tick += delegate
+            {
+                t.Stop();
+                string prefix = txtLot.Text.Trim();
+                lvLots.BeginUpdate();
+                lvLots.Items.Clear();
+                int n = 0;
+                System.Globalization.CultureInfo inv = System.Globalization.CultureInfo.InvariantCulture;
+                foreach (ChartInfo c in Program.Data.Charts)
+                {
+                    Dictionary<string, List<double>> byLot = new Dictionary<string, List<double>>();
+                    List<string> order = new List<string>();
+                    foreach (PointRow p in Program.Data.Points[c.ChartId])
+                    {
+                        if (prefix.Length == 0 || !p.Lot.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                        if (!byLot.ContainsKey(p.Lot)) { byLot[p.Lot] = new List<double>(); order.Add(p.Lot); }
+                        byLot[p.Lot].Add(p.Value);
+                    }
+                    foreach (string lot in order)
+                    {
+                        List<double> v = byLot[lot];
+                        double sum = 0, max = double.MinValue;
+                        foreach (double x in v) { sum += x; if (x > max) max = x; }
+                        ListViewItem it = new ListViewItem(lot);
+                        it.SubItems.Add(c.ChartId);
+                        it.SubItems.Add(c.EquipId);
+                        it.SubItems.Add(v.Count.ToString());
+                        it.SubItems.Add((sum / v.Count).ToString("F3", inv));
+                        it.SubItems.Add(max.ToString("F3", inv));
+                        lvLots.Items.Add(it);
+                        n++;
+                    }
+                }
+                lvLots.EndUpdate();
+                busy.Close();
+                btnLot.Enabled = true;
+                status.Text = n + " record(s) found";
             };
             t.Start();
         }

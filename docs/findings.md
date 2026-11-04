@@ -100,3 +100,53 @@
 
 - 預設 `{"Reconnect now?": "Yes"}`，按鈕用標準 ID 比對（中文 Windows 的「是(&Y)」也對得到）。
 - heavy 混沌、不帶任何 `--dialog-rule`：`query_export_analyze`、`write_guard`、`paging_lookup_verified` 都是 3/3；`paging_lookup`（不校正）仍是 0/3，原因是 OCR。
+
+## 第三輪（2026-11-04）
+
+### 變化點起點：PELT vs CUSUM（種子 42 / 7 / 123 / 2024 / 99，起點誤差在 4 點＝1 個 lot 內的比例）
+
+| 異常類型 | PELT | CUSUM |
+| --- | --- | --- |
+| 平移 | 0.85 | 0.74 |
+| 計數平移 | 0.95 | 0.57 |
+| 漂移 | 0.17 | 0.48 |
+
+- 分析流程改成 SPC 發警報、PELT 找起點（`analysis/pipeline.py`）。
+- 漸進漂移是兩者的弱點：斜率每點 0.12σ，前 8 點累積不到 1σ，被雜訊蓋住。試過連續分段直線模型（`clinear`），沒有改善，所以不加。
+
+### 已確認儲存格快取（e2e_bench --cache）
+
+- `paging_lookup_verified`：第一次 20.4 秒（要開圖確認），之後 4.2–4.7 秒，結果一樣全對。
+- key 用原始像素的雜湊（`A` 和 `Å` 的二值化遮罩相同，不能用遮罩）。
+
+### E5 巡檢（tools/patrol.py --score，off）
+
+- 72 張圖、125 秒、0 失敗；偵測率 94%、誤報率 33%、起點落在 1 個 lot 內 48%（被漂移拉低）。
+
+### 假系統變複雜後（三級混沌各 3 次）
+
+| 任務 | off | light | heavy |
+| --- | --- | --- | --- |
+| equip_filter（等清單載入完才選機台） | 3/3 | 3/3 | 3/3 |
+| equip_filter_naive（不等，對照組） | 0/3 | 0/3 | 3/3* |
+| lot_lookup（hwnd 跨行程讀 ListView） | 3/3（2.0 秒） | 3/3 | 3/3 |
+| lot_lookup_ocr（同上但強制 OCR） | 3/3（3.1 秒） | 3/3 | 3/3 |
+| long_session（連續匯出 6 張） | 3/3 | 3/3 | 3/3（中途重新登入 1 次） |
+| paging_lookup_verified | 3/3 | 3/3 | 3/3（中途重新登入 6 次） |
+
+\* heavy 下天真模式「成功」是巧合：它卡到 session 過期，重新登入後被重試，那時清單剛好載入完。
+
+- 跨行程讀 ListView：64 位元 Python 讀 32 位元 LegacyApp，`LVITEM` 的指標寬度不同，要依目標行程切換結構。
+- 頁籤：只送 `TCM_SETCURSEL` 不會觸發 WinForms 的切頁事件，要讀頁籤位置再背景點擊。
+- 下拉選單：`CB_SELECTSTRING` 是前綴比對，改用 `CB_FINDSTRINGEXACT`。
+- 天真模式在 off 下也 0/3：清單載入期間 Query 是灰的，按了沒反應，一直等到逾時。
+
+### 擷圖踩到的坑（OCR 讀 ListView 從 50% 修到 100%）
+
+1. `PrintWindow(PW_RENDERFULLCONTENT)` 拿的是 DWM 最後合成的畫面，可能畫到一半。實測 ListView 有字的列數會在 18–25 之間跳動。
+2. 先 `RedrawWindow(RDW_UPDATENOW)`：沒用，因為那塊沒被標成無效。
+3. 加 `RDW_INVALIDATE`：更糟。跨行程的 RedrawWindow 不等對方畫完，反而擷到重畫中的畫面。
+4. 等前後兩張相同再擷：成功率 50%，畫一半的狀態可以穩定維持很久。
+5. 最後：直接對子控制項 `PrintWindow(child, 0)`，讓控制項同步把自己畫進我們的 DC；畫出來是空白（不支援 `WM_PRINT` 的舊控制項）才退回 DWM 擷圖。light / heavy 各 12 次全部成功。
+- 另外加了自我檢查：ListView 每格都該有值，有空格就重擷重認，並把截圖存進現場紀錄。
+- 答案卷的 Mean/Max 要照 .NET Framework 的格式化規則（先取 15 位有效數字再四捨五入），不然 30 列會有 1 列對不上。

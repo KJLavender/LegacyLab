@@ -1,0 +1,6 @@
+id: equip_filter
+description: 連動下拉選單：選 EquipType 後機台清單延遲載入，要等載入完才能選 EquipmentID
+actions:
+  - query: {equip_type: PHOTO, equip_id: PHOB8023}
+evaluate:
+  - query_ids_match_truth

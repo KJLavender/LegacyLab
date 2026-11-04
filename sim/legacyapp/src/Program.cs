@@ -12,12 +12,14 @@ namespace LegacyApp
         public static AppData Data;
         public static Chaos Chaos;
         public static string DataDir;
+        public static string Repo;
 
         [STAThread]
         static int Main(string[] args)
         {
             Dictionary<string, string> opt = ParseArgs(args);
             string repo = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\.."));
+            Repo = repo;
             DataDir = Get(opt, "data", Environment.GetEnvironmentVariable("LEGACYLAB_DATA") ?? Path.Combine(repo, "sim_data"));
             string chaosPath = Get(opt, "chaos", Path.Combine(repo, @"sim\chaos.ini"));
 

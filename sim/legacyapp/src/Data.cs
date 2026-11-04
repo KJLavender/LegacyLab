@@ -73,6 +73,8 @@ namespace LegacyApp
         public int DelayMinMs = 500, DelayMaxMs = 1000;
         public double PopupProb, TokenExpireProb, FocusStealProb;
         public double DpiScale = 1.0;
+        public int ListDelayMinMs = 150, ListDelayMaxMs = 300;   // 連動下拉選單的載入時間
+        public int SessionTimeoutS;                                // 0 = 不會過期
         public bool DecimalComma;
         Random rng;
 
@@ -104,11 +106,13 @@ namespace LegacyApp
             {
                 c.DelayMinMs = 1000; c.DelayMaxMs = 3000;
                 c.PopupProb = 0.1; c.TokenExpireProb = 0.1; c.FocusStealProb = 0.05;
+                c.ListDelayMinMs = 500; c.ListDelayMaxMs = 1500; c.SessionTimeoutS = 60;
             }
             else if (c.Level == "heavy")
             {
                 c.DelayMinMs = 1000; c.DelayMaxMs = 5000;
                 c.PopupProb = 0.3; c.TokenExpireProb = 0.3; c.FocusStealProb = 0.15;
+                c.ListDelayMinMs = 800; c.ListDelayMaxMs = 3000; c.SessionTimeoutS = 20;
             }
             c.DelayMinMs = GetInt(kv, "delay_min_ms", c.DelayMinMs);
             c.DelayMaxMs = GetInt(kv, "delay_max_ms", c.DelayMaxMs);
@@ -116,6 +120,9 @@ namespace LegacyApp
             c.TokenExpireProb = GetDouble(kv, "token_expire_prob", c.TokenExpireProb);
             c.FocusStealProb = GetDouble(kv, "focus_steal_prob", c.FocusStealProb);
             c.DpiScale = GetDouble(kv, "dpi_scale", c.DpiScale);
+            c.ListDelayMinMs = GetInt(kv, "list_delay_min_ms", c.ListDelayMinMs);
+            c.ListDelayMaxMs = GetInt(kv, "list_delay_max_ms", c.ListDelayMaxMs);
+            c.SessionTimeoutS = GetInt(kv, "session_timeout_s", c.SessionTimeoutS);
             c.DecimalComma = GetInt(kv, "decimal_comma", 0) != 0;
             int seed = seedOverride ?? GetInt(kv, "seed", Environment.TickCount);
             c.rng = new Random(seed);
@@ -125,6 +132,7 @@ namespace LegacyApp
         public bool Hit(double p) { return p > 0 && rng.NextDouble() < p; }
         public int Delay() { return rng.Next(DelayMinMs, Math.Max(DelayMinMs + 1, DelayMaxMs)); }
         public int Next(int max) { return rng.Next(max); }
+        public int ListDelay() { return rng.Next(ListDelayMinMs, Math.Max(ListDelayMinMs + 1, ListDelayMaxMs)); }
 
         static int GetInt(Dictionary<string, string> kv, string k, int def)
         {
